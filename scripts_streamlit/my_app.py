@@ -1,75 +1,89 @@
-# import streamlit as st
-
-# st.write("Hello world")
-
-# # Afficher un widget pour capturer une image
-# picture = st.camera_input("Prenez une photo")
-
-# # Si une image est capturée, l'afficher
-# if picture:
-#     st.image(picture)   
-
 import streamlit as st
 import numpy as np
-from keras.models import load_model
 import cv2
-
-# if st.button("Activer la caméra"):
-#     st.session_state.camera_enabled = True
-# elif st.button("Désactiver la caméra"):
-#     st.session_state.camera_enabled = False
-
-# if 'camera_enabled' not in st.session_state:
-#     st.session_state.camera_enabled = False
-
-# picture = st.camera_input("Prendre une photo", disabled=not st.session_state.camera_enabled)
-
-
-# uploaded_file = st.file_uploader("Choose a image file", type="jpg")
-import streamlit as st
 from keras.models import load_model
-import numpy as np
-import cv2
 
-model = load_model("../fruit_model.h5")
-CLASSES = ["pas_mur", "mur", "trop_mur"]
 
-st.title("Test de classification de tomate")
+MODEL_PATH = "../fruit_maturity_detector.keras"
+IMG_SIZE = 128
+fruit_classes = ["banane", "tomate", "non_fruit"]
+maturity_classes = ["pas_mur", "mur", "trop_mur"]
 
-uploaded = st.file_uploader("Choisir une image", type=["jpg", "jpeg", "png"])
+def speak(text):
+    st.components.v1.html(
+        f"""
+        <script>
+            var msg = new SpeechSynthesisUtterance("{text}");
+            window.speechSynthesis.speak(msg);
+        </script>
+        """,
+        height=0,
+    )
 
-if uploaded:
-    file_bytes = np.frombuffer(uploaded.read(), np.uint8)
-    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    show = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    st.image(show, caption="Image chargée")
+@st.cache_resource
+def load_my_model(path):
+    return load_model(path)
 
-    img = cv2.resize(img, (128, 128))
+model = load_my_model(MODEL_PATH)
+
+def predict_image(img_array):
+    img = cv2.resize(img_array, (IMG_SIZE, IMG_SIZE))
     img = img / 255.0
     img = np.expand_dims(img, axis=0)
+    pred_fruit, pred_maturity = model.predict(img)
+    fruit_idx = np.argmax(pred_fruit)
+    maturity_idx = np.argmax(pred_maturity)
+    return fruit_idx, maturity_idx
 
-    pred = model.predict(img)
-    class_idx = np.argmax(pred)
+st.set_page_config(page_title="Détecteur de fruits", layout="centered")
 
-    st.success(f"Résultat : {CLASSES[class_idx]}")
+st.title("Détecteur de Fruits et Maturité")
+st.markdown("""
+**Instructions :**
+- Chargez une image ou utilisez votre caméra.
+- Le modèle détectera si c'est un fruit (`banane` ou `tomate`) ou non.
+- Si c'est un fruit, il donnera également son niveau de maturité.
+""")
 
-# if picture:
-#     st.image(picture)   
-# model = load_model("../banana_model.h5")
-# img = cv2.imread(picture)
-# classes = ["pas_mur", "mur", "trop_mur"]
+uploaded_file = st.file_uploader("Choisissez une image", type=["jpg", "jpeg", "png"])
 
+use_camera = st.checkbox("Utiliser la caméra")
 
-#     # continue
-# if img is None:
-#     print(f"Failed to load image: {img}")
-# else:
-#     resized_img = cv2.resize(img, (64, 64))   
-# # img = cv2.resize(img, (128, 128))
-#     img = resized_img / 255.0
-#     img = np.expand_dims(img, axis=0)
+if use_camera:
+    picture = st.camera_input("Prenez une photo")
+    if picture:
+        file_bytes = np.frombuffer(picture.read(), np.uint8)
+        img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+        st.image(img_array, caption="Image capturée", use_container_width=True)
 
-#     pred = model.predict(img)
-#     class_idx = np.argmax(pred)
+        fruit_idx, maturity_idx = predict_image(img_array)
 
-#     print("Résultat :", classes[class_idx])
+        if fruit_classes[fruit_idx] == "non_fruit":
+            text = "Ce n'est pas un fruit."
+            st.warning("error" + text)
+        else:
+            text = f"C'est une {fruit_classes[fruit_idx]}, elle est {maturity_classes[maturity_idx]}."
+            st.success("ok" + text)
+
+        speak(text)
+
+elif uploaded_file:
+    file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+    img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+    st.image(img_array, caption="Image chargée", use_container_width=True)
+
+    fruit_idx, maturity_idx = predict_image(img_array)
+
+    if fruit_classes[fruit_idx] == "non_fruit":
+        text = "Ce n'est pas un fruit."
+        st.warning("error" + text)
+    else:
+        text = f"C'est une {fruit_classes[fruit_idx]}, elle est {maturity_classes[maturity_idx]}."
+        st.success("ok" + text)
+
+    speak(text)
+
+st.markdown("---")
+st.info("💡 Astuce : pour de meilleurs résultats, utilisez des images claires avec le fruit bien visible.")
