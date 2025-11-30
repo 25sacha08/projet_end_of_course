@@ -17,7 +17,6 @@ IMG_SIZE = 128
 fruit_classes = ["ananas", "banane", "tomate", "papaye", "non_fruit"]
 maturity_classes = ["pas_mur", "mur", "trop_mur"]
 
-
 def speak(text):
     st.components.v1.html(
         f"""
@@ -34,7 +33,6 @@ def extract_model(zip_path, extract_path):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(os.path.dirname(extract_path))
     return extract_path
-
 
 @st.cache_resource
 def load_my_model(zip_path):
@@ -86,18 +84,18 @@ if img_array is not None:
     if fruit_classes[fruit_idx] == "non_fruit":
         text = "Ce n'est pas un fruit."
         st.warning(text)
+        speak(text)
     else:
         text = f"C'est une **{fruit_classes[fruit_idx]}**, et elle est **{maturity_classes[maturity_idx]}**."
         st.success(text)
+        speak(text)
 
-    speak(text)
-
-    try:
-        ripening_status = detect_artificial_ripening(img_array)
-        st.subheader("🧪 Analyse supplémentaire : Mûrissement artificiel")
-        st.write(f"Résultat : **{ripening_status}**")
-    except Exception as e:
-        st.error(f"Erreur lors de la détection du mûrissement artificiel : {e}")
+        try:
+            ripening_status = detect_artificial_ripening(img_array)
+            st.subheader("🧪 Analyse supplémentaire : Mûrissement artificiel")
+            st.write(f"Résultat : **{ripening_status}**")
+        except Exception as e:
+            st.error(f"Erreur lors de la détection du mûrissement artificiel : {e}")
 
 st.markdown("---")
 st.info("💡 Astuce : utilisez des images claires et centrées pour de meilleurs résultats.")
