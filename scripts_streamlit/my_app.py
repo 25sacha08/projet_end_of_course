@@ -1,11 +1,14 @@
 import streamlit as st
 import numpy as np
 import cv2
-import tensorflow as tf
-from tensorflow.keras.models import load_model
-import sys
 import os
 import zipfile
+from keras.models import load_model
+from ultralytics import YOLO
+import sys
+
+# YOLO pour la détection des fruits
+yolo_model = YOLO("yolov8n.pt")  # modèle léger et rapide
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from detect_maturation import detect_artificial_ripening
@@ -16,6 +19,18 @@ IMG_SIZE = 128
 
 fruit_classes = ["ananas", "banane", "tomate", "papaye", "non_fruit"]
 maturity_classes = ["pas_mur", "mur", "trop_mur"]
+fruit_genre = {
+    "ananas": "un",
+    "banane": "une",
+    "tomate": "une",
+    "papaye": "une"
+}
+
+# Mapping YOLO COCO → fruit pour notre modèle
+yolo_to_fruit = {
+    46: "banane",   # banana
+    49: "tomate"    # orange → tomate (approximation)
+}
 
 def speak(text):
     st.components.v1.html(
@@ -52,50 +67,70 @@ def predict_image(img_array):
 
     return fruit_idx, maturity_idx
 
-st.set_page_config(page_title="Détecteur de Fruits", layout="centered")
-st.title("🍌🍅🥭 Détecteur de Fruits & Maturité")
+st.set_page_config(page_title="Détecteur de Fruits + YOLO", layout="centered")
+st.title("🍌🍅 YOLO + Détecteur de Maturité")
 st.markdown("""
-Téléchargez une image ou prenez une photo.  
-Le modèle détecte si l'objet est un fruit (ananas, banane, tomate, papaye) ou non.  
-S'il s'agit d'un fruit, il analyse aussi sa maturité.
+Téléchargez une image ou prenez une photo pour détecter les fruits.  
+YOLO analyse l'image d'abord, puis le modèle de maturité traite chaque fruit détecté.
 """)
 
 uploaded_file = st.file_uploader("Choisissez une image", type=["jpg", "jpeg", "png"])
 use_camera = st.checkbox("📸 Utiliser la caméra")
-img_array = None
+img_path = None
 
 if use_camera:
     picture = st.camera_input("Prenez une photo")
     if picture:
-        file_bytes = np.frombuffer(picture.read(), np.uint8)
-        img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
-        st.image(img_array, caption="Image capturée", use_container_width=True)
-
+        img_path = "temp_img.jpg"
+        with open(img_path, "wb") as f:
+            f.write(picture.getbuffer())
 elif uploaded_file:
-    file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
-    img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    img_path = f"temp_upload_{uploaded_file.name}"
+    with open(img_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+
+if img_path:
+    # YOLO analyse l'image
+    results = yolo_model(img_path)
+    # Lire l'image pour découpage et modèle de maturité
+    img_array = cv2.imread(img_path)
     img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
-    st.image(img_array, caption="Image chargée", use_container_width=True)
+    st.image(img_array, caption="Image analysée", use_container_width=True)
 
-if img_array is not None:
-    fruit_idx, maturity_idx = predict_image(img_array)
+    fruits_detected = False
 
-    if fruit_classes[fruit_idx] == "non_fruit":
-        text = "Ce n'est pas un fruit."
-        st.warning(text)
-        speak(text)
-    else:
-        text = f"C'est une **{fruit_classes[fruit_idx]}**, et elle est **{maturity_classes[maturity_idx]}**."
-        st.success(text)
-        speak(text)
+    for box in results[0].boxes:
+        cls = int(box.cls[0])
+        if cls in yolo_to_fruit:
+            fruits_detected = True
+            fruit_name = yolo_to_fruit[cls]
+            genre = fruit_genre.get(fruit_name, "un")
 
-        try:
-            ripening_status = detect_artificial_ripening(img_array)
-            st.subheader("🧪 Analyse supplémentaire : Mûrissement artificiel")
-            st.write(f"Résultat : **{ripening_status}**")
-        except Exception as e:
-            st.error(f"Erreur lors de la détection du mûrissement artificiel : {e}")
+            # Découper la zone détectée
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            crop = img_array[y1:y2, x1:x2]
+
+            # Modèle de maturité
+            fruit_idx, maturity_idx = predict_image(crop)
+            maturity = maturity_classes[maturity_idx]
+
+            st.subheader(f"📍 Fruit détecté : {fruit_name}")
+            st.image(crop, caption=f"Zone analysée ({fruit_name})", use_container_width=True)
+
+            result_text = f"C'est {genre} {fruit_name}, et elle est {maturity}"
+            st.success(result_text)
+            speak(result_text)
+
+            # Analyse du mûrissement artificiel
+            try:
+                ripening_status = detect_artificial_ripening(crop)
+                st.write(f"🧪 Mûrissement artificiel : {ripening_status}")
+            except Exception as e:
+                st.error(f"Erreur lors de la détection du mûrissement artificiel : {e}")
+
+    if not fruits_detected:
+        st.warning("Aucun fruit reconnu par YOLO.")
+        speak("Aucun fruit détecté")
 
 st.markdown("---")
 st.info("💡 Astuce : utilisez des images claires et centrées pour de meilleurs résultats.")
