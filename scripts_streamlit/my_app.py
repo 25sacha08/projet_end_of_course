@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import cv2
 import os
-import zipfile
 from keras.models import load_model
 from ultralytics import YOLO
 import sys
@@ -13,8 +12,7 @@ yolo_model = YOLO("yolov8n.pt")  # modèle léger et rapide
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from detect_maturation import detect_artificial_ripening
 
-MODEL_ZIP_PATH = "../fruit_maturity_detector.zip"
-MODEL_EXTRACT_PATH = "../fruit_maturity_detector.keras"
+MODEL_PATH = "../fruit_maturity_detector.keras"
 IMG_SIZE = 128
 
 fruit_classes = ["ananas", "banane", "tomate", "papaye", "non_fruit"]
@@ -28,8 +26,8 @@ fruit_genre = {
 
 # Mapping YOLO COCO → fruit pour notre modèle
 yolo_to_fruit = {
-    46: "banane",   # banana
-    49: "tomate"    # orange → tomate (approximation)
+    46: "banane",
+    49: "tomate"
 }
 
 def speak(text):
@@ -43,18 +41,11 @@ def speak(text):
         height=0,
     )
 
-def extract_model(zip_path, extract_path):
-    if not os.path.exists(extract_path):
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(os.path.dirname(extract_path))
-    return extract_path
-
 @st.cache_resource
-def load_my_model(zip_path):
-    model_path = extract_model(zip_path, MODEL_EXTRACT_PATH)
-    return load_model(model_path)
+def load_my_model():
+    return load_model(MODEL_PATH)
 
-model = load_my_model(MODEL_ZIP_PATH)
+model = load_my_model()
 
 def predict_image(img_array):
     img = cv2.resize(img_array, (IMG_SIZE, IMG_SIZE))
@@ -67,8 +58,8 @@ def predict_image(img_array):
 
     return fruit_idx, maturity_idx
 
-st.set_page_config(page_title="Détecteur de Fruits + YOLO", layout="centered")
-st.title("🍌🍅 YOLO + Détecteur de Maturité")
+st.set_page_config(page_title="Détecteur de Fruits", layout="centered")
+st.title("🍌🍅 Détecteur de fruit & Maturité")
 st.markdown("""
 Téléchargez une image ou prenez une photo pour détecter les fruits.  
 YOLO analyse l'image d'abord, puis le modèle de maturité traite chaque fruit détecté.
@@ -90,9 +81,7 @@ elif uploaded_file:
         f.write(uploaded_file.getbuffer())
 
 if img_path:
-    # YOLO analyse l'image
     results = yolo_model(img_path)
-    # Lire l'image pour découpage et modèle de maturité
     img_array = cv2.imread(img_path)
     img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
     st.image(img_array, caption="Image analysée", use_container_width=True)
@@ -106,11 +95,9 @@ if img_path:
             fruit_name = yolo_to_fruit[cls]
             genre = fruit_genre.get(fruit_name, "un")
 
-            # Découper la zone détectée
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             crop = img_array[y1:y2, x1:x2]
 
-            # Modèle de maturité
             fruit_idx, maturity_idx = predict_image(crop)
             maturity = maturity_classes[maturity_idx]
 
@@ -121,12 +108,11 @@ if img_path:
             st.success(result_text)
             speak(result_text)
 
-            # Analyse du mûrissement artificiel
             try:
                 ripening_status = detect_artificial_ripening(crop)
                 st.write(f"🧪 Mûrissement artificiel : {ripening_status}")
             except Exception as e:
-                st.error(f"Erreur lors de la détection du mûrissement artificiel : {e}")
+                st.error(f"Erreur lors de l'analyse du mûrissement artificiel : {e}")
 
     if not fruits_detected:
         st.warning("Aucun fruit reconnu par YOLO.")

@@ -7,11 +7,9 @@ def detect_artificial_ripening(img):
     de mûrissement artificiel.
     """
 
-    # Convertir en HSV pour analyser la couleur
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
     h, s, v = cv2.split(hsv)
 
-    #Saturation trop forte = suspicion
     sat_mean = np.mean(s)
     sat_score = np.interp(sat_mean, [60, 200], [0, 100])  
     sat_score = np.clip(sat_score, 0, 100)
